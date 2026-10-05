@@ -2,31 +2,22 @@
 # Update all git repos in directory tree
 dir=${1:-"."}
 results=$(mktemp)
-log=$(mktemp)
-trap "tsp -K; rm -f "$results" "$log"" EXIT
-echo "Updating repos in: "$dir""
-tsp -S 8
-find ""$dir"" -name ".git" -type d 2>/dev/null | while read git_dir; do
-	tsp -n git-update-worker.sh "$(dirname ""$git_dir"")" ""$results"" ""$log""
-done
-tail -f ""$log"" &
-tail_pid=$!
-tsp -w
-kill "$tail_pid" 2>/dev/null
-conflicts=$(grep -c "^REBASE_CONFLICT:" ""$results"" 2>/dev/null || echo 0)
+trap 'rm -f "$results"' EXIT
+echo "Updating repos in: $dir"
+find "$dir" -name .git -type d -prune -print0 2>/dev/null |
+	xargs -0 -P 8 -I{} "$(dirname "$0")/git-update-worker.sh" {} "$results"
+conflicts=$(grep -c "^REBASE_CONFLICT:" "$results")
 echo "CHANGES:"
-grep "^UPDATED:" ""$results"" | while IFS='|' read prefix repo changelog; do
-	repo_name=$(echo ""$repo"" | sed "s|^"$dir"/||" | sed 's|^./||')
-	echo "\033[32m"$repo_name":\033[0m"
-	echo ""$changelog"" | tr ';' '\n' | sed 's/^/  /' | sed 's/^  $//'
+sed -n 's/^UPDATED://p' "$results" | while IFS='|' read -r repo changelog; do
+	repo_name=${repo#"$dir"/}
+	printf '\033[32m%s:\033[0m\n' "$repo_name"
+	printf '%s\n' "$changelog" | tr ';' '\n' | sed 's/^/  /' | sed 's/^  $//'
 done
-if grep -q "^REBASE_CONFLICT:" ""$results""; then
-	echo "\033[31mREBASE CONFLICTS:\033[0m"
-	grep "^REBASE_CONFLICT:" ""$results"" | while IFS='|' read prefix repo _; do
-		repo_name=$(echo ""$repo"" | sed "s|^"$dir"/||" | sed 's|^./||')
-		echo "\033[31m"$repo_name": requires manual resolution\033[0m"
+if [ "$conflicts" -gt 0 ]; then
+	printf '\033[31mREBASE CONFLICTS:\033[0m\n'
+	sed -n 's/^REBASE_CONFLICT://p' "$results" | while IFS='|' read -r repo _; do
+		repo_name=${repo#"$dir"/}
+		printf '\033[31m%s: requires manual resolution\033[0m\n' "$repo_name"
 	done
-fi
-if [ ""$conflicts"" ] && [ ""$conflicts"" -gt 0 ] 2>/dev/null; then
-	notify-send "Git Rebase Conflicts" ""$conflicts" repos need manual resolution" -u critical -t 10000
+	notify-send "Git Rebase Conflicts" "$conflicts repos need manual resolution" -u critical -t 10000
 fi
