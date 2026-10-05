@@ -1,7 +1,9 @@
 #!/bin/sh
+# Set audio tags via ffmpeg stream copy. Usage: tag-music [OPTIONS] file
+# Based on "tag" from Luke Smith's voidrice (GPL-3.0): https://github.com/LukeSmithxyz/voidrice
 
 err() { echo "Usage:
-	tag [OPTIONS] file
+	tag-music [OPTIONS] file
 Options:
 	-a: artist/author
 	-t: song/chapter title
@@ -29,9 +31,6 @@ shift $((OPTIND - 1))
 
 file="$1"
 
-temp="$(mktemp -p "$(dirname "$file")")"
-trap 'rm -f $temp' HUP INT QUIT TERM PWR EXIT
-
 [ ! -f "$file" ] && echo 'Provide file to tag.' && err
 
 [ -z "$title" ] && echo 'Enter a title.' && read -r title
@@ -39,11 +38,15 @@ trap 'rm -f $temp' HUP INT QUIT TERM PWR EXIT
 [ -z "$album" ] && echo 'Enter an album.' && read -r album
 [ -z "$track" ] && echo 'Enter a track number.' && read -r track
 
-cp -f "$file" "$temp" && ffmpeg -i "$temp" -map 0 -y -codec copy \
+temp="$(mktemp -d "$(dirname "$file")/.tag-music.XXXXXX")" || exit 1
+trap 'rm -rf "$temp"' HUP INT QUIT TERM EXIT
+
+ffmpeg -i "$file" -map 0 -y -codec copy \
 	-metadata title="$title" \
 	-metadata album="$album" \
 	-metadata artist="$artist" \
 	-metadata track="${track}${total:+/"$total"}" \
 	${date:+-metadata date="$date"} \
 	${genre:+-metadata genre="$genre"} \
-	${comment:+-metadata comment="$comment"} "$file"
+	${comment:+-metadata comment="$comment"} "$temp/${file##*/}" &&
+	mv -f "$temp/${file##*/}" "$file"
