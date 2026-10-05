@@ -1,2 +1,3 @@
 #!/bin/sh
+# Re-render one PDF as 100 dpi JPEG pages. Usage: jpegify-aux file.pdf -> file.pdf-jpeg.pdf
 convert -density 100 -compress JPEG  -quality 70 "$1" "$1"-jpeg.pdf

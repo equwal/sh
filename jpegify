@@ -1,15 +1,13 @@
-#!/bin/bash
-TEMP="$(mktemp)"
-[ -e "$TEMP" ] && rm "$TEMP"
-mkdir "$TEMP"
-BASE="$(basename "$1")"
-cp "$1" "$TEMP"
+#!/bin/sh
+# Shrink a PDF by re-rendering every page as a JPEG (via jpegify-aux).
+# Usage: jpegify FILE.pdf   (writes ./FILE.pdf-jpeg.pdf)
+set -e
+TEMP="$(mktemp -d)"
+trap 'rm -r "$TEMP"' EXIT
+OUT="$PWD/$(basename "$1")-jpeg.pdf"
+pdfseparate "$1" "$TEMP"/%d.pdf
 
 cd "$TEMP"
-pdfseparate "$PWD"/"$1" %d.pdf
-rm "$BASE"
-find . -name '*.pdf' -print0 | grep -z -v jpeg | xargs -0 -L1 jpegify-aux
-cat <(find . -name '*-jpeg.pdf' | sed 's:^./::' | sort -h | sed 's:^\|$:":g') <(echo "$BASE"-jpeg.pdf) | xargs pdfunite
-cd -
-mv "$TEMP"/"$BASE"-jpeg.pdf .
-rm -r "$TEMP"
+for p in *.pdf; do jpegify-aux "$p"; done
+# shellcheck disable=SC2046 # page files are N.pdf-jpeg.pdf: no spaces
+pdfunite $(printf '%s\n' *-jpeg.pdf | sort -n) "$OUT"
