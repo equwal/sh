@@ -1,25 +1,28 @@
 #!/bin/sh
+# Pick a man page with fzf (apropos list, man preview) and open it.
+# Usage: macho [-s section] [keyword...]
 
 export FZF_DEFAULT_OPTS='
 --height=30%
 --layout=reverse
 --prompt="Manual: "
---preview="echo {1} | sed -E \"s/^\((.+)\)/\1/\" | xargs -I{S} man -Pcat {S} {2} 2>/dev/null"'
+--preview="man {1} {2} 2>/dev/null"'
 
 while getopts ":s:" opt; do
     case $opt in
-        s ) SECTION=$OPTARG; shift; shift;;
+        s ) SECTION=$OPTARG;;
         \?) echo "Invalid option: -$OPTARG" >&2; exit 1;;
         : ) echo "Option -$OPTARG requires an argument" >&2; exit 1;;
     esac
 done
+shift $((OPTIND - 1))
+[ $# -gt 0 ] || set -- .
 
-manual=$(apropos -s ${SECTION:-''} ${@:-.} | \
-    grep -v -E '^.+ \(0\)' |\
-    awk '{print $2 "    " $1}' | \
+# "name (1) - desc" (man-db) or "name(1) - desc" (mandoc) -> "1    name"
+manual=$(apropos ${SECTION:+-s "$SECTION"} "$@" | \
+    sed -E 's/^([^ ,(]+)[^(]*\(([^,)]+).*/\2    \1/' | \
     sort | \
-    fzf  | \
-    sed -E 's/^\((.+)\)/\1/')
+    fzf)
 
 [ -z "$manual" ] && exit 0
-man $manual
+man "${manual%% *}" "${manual##* }"
