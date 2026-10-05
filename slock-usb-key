@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Lock the screen with slock when a USB key is unplugged; unlock when replugged.
+# Usage: put the key's ID_SERIAL in ~/.slock-usb-key; allow NOPASSWD sudo killall.
 
 
 from os.path import expanduser
@@ -10,15 +12,18 @@ import pyudev
 
 signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
-with open(expanduser('~/.slock-usb-key'), 'r') as fp:
-    serial = fp.read().strip()
+try:
+    with open(expanduser('~/.slock-usb-key'), 'r') as fp:
+        serial = fp.read().strip()
+except OSError as e:
+    raise SystemExit(f'slock-usb-key: {e}: put the key ID_SERIAL there')
 
 context = pyudev.Context()
 monitor = pyudev.Monitor.from_netlink(context)
-monitor.filter_by('block')
+monitor.filter_by('block', 'disk')
 for device in iter(monitor.poll, None):
     if device.get('ID_SERIAL') == serial:
         if device.action == 'add':
-            Popen(['sudo', '/usr/bin/killall', 'slock'])
+            Popen(['sudo', 'killall', 'slock'])
         elif device.action == 'remove':
             Popen(['slock'])
