@@ -1,13 +1,16 @@
 #!/bin/sh
+# Share the default output's monitor as raw 48k s16le stereo over TCP. No auth.
+# Usage: pashare start [port]|stop   (port defaults to 8000; needs pactl >= 15)
 case "$1" in
   start)
-    $0 stop 
-    pactl load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=alsa_output.pci-0000_00_1f.3.iec958-stereo.monitor record=true port=8000
+    pactl unload-module module-simple-protocol-tcp 2>/dev/null
+    pactl load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source="$(pactl get-default-sink).monitor" record=true port="${2:-8000}"
     ;;
   stop)
-    pactl unload-module `pactl list | grep 'Monitor Source' | grep tcp -B1 | grep M | sed 's/[^0-9]//g'`
+    pactl unload-module module-simple-protocol-tcp
     ;;
   *)
-    echo "Usage: $0 start|stop" >&2
+    echo "Usage: $0 start [port]|stop" >&2
+    exit 1
     ;;
 esac
