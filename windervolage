@@ -1,0 +1,57 @@
+#!/bin/sh
+#
+# wv - Wiedervorlage (bring forward file)
+# schedule a reminder mail to yourself at a given date using at(1)
+#
+# markus schnalke <meillo@marmaro.de>
+
+queue=w
+
+cd  # move to home directory
+
+listone() {
+	atq -q "$queue" | awk "/^$1\t/ {sub(/ $queue .*/,\"\");print}" 
+	at -c "$1" | sed '
+		1,/^# wv/d;
+		/^mail /{s,[^"]*",,; s,".*,,};
+		s,^,\t,
+		'
+}
+
+list() {
+	if [ $# -eq 0 ] ; then
+		atq -q "$queue" | while read id rest ; do
+			listone "$id"
+		done
+	else
+		for i in "$@" ; do
+			listone "$i"
+		done
+	fi
+}
+
+
+if [ $# -eq 0 ] ; then
+	cat >&2 <<!
+Usage: ${0##*/} timespec...
+       ${0##*/} -l [jobid...]
+!
+	exit 1
+fi
+
+if [ "$1" = "-l" ] ; then
+	shift
+	list "$@"
+	exit
+fi
+
+echo At: `date +"%Y-%m-%d %H:%M" -d "$*"`
+printf "Subject: "
+read sub
+
+at -q "$queue" "$@" <<!
+# wv
+mail -s "Wv: $sub" `id -un` <<EOF
+`cat`
+EOF
+!

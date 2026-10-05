@@ -1,0 +1,2 @@
+#!/bin/sh
+convert -density 100 -compress JPEG  -quality 70 "$1" "$1"-jpeg.pdf

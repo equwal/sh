@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+
+
+from argparse import ArgumentParser
+from os import environ
+from os.path import isfile
+from random import randint
+from re import match
+from socket import socket, AF_INET, SOCK_STREAM
+from subprocess import check_output
+from sys import stderr
+from time import sleep
+from uuid import uuid4
+
+from flask import Flask, request
+from qrcode import QRCode
+
+
+app = Flask(__name__)
+secret = str(uuid4())
+
+
+def html(body):
+    out = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        <link href="data:," rel="icon">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <title>http-collect</title>
+        <style>
+body {
+    max-width: 400px;
+    margin: 0px auto;
+    padding: 3em;
+    font-family: sans-serif;
+}
+input, textarea {
+    width: 100%;
+    height: 8em;
+    margin: 0.5em 0px;
+}
+        </style>
+    </head>
+    <body>
+    '''
+    out += body
+    out += '''
+    </body>
+</html>
+    '''
+
+    return out
+
+
+def sanitize_fs(s):
+    return s.strip().lstrip('.').replace('/', '_')
+
+
+def sanitize_html(s):
+    return s.replace('&', '&amp').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def suffixify(basename, suff):
+    m = match(r'(.+)\.([^.]+)$', basename)
+    if not m:
+        return f'{basename} ({suff:03d})'
+
+    return f'{m.group(1)} ({suff:03d}).{m.group(2)}'
+
+
+def get_final_name(original_name):
+    candidate = base_name = sanitize_fs(original_name)
+    suff = 1
+    while isfile(candidate):
+        candidate = suffixify(base_name, suff)
+        suff += 1
+    return candidate
+
+
+def determine_host_and_port(args):
+    host = None
+    port = None
+
+    if args.host:
+        host = args.host
+    if args.port:
+        port = args.port
+
+    if host is None:
+        rt = check_output(['ip', '-4', 'route']).decode('UTF-8')
+        for line in rt.splitlines():
+            m = match(r'default.* src ([0-9.]+)', line)
+            if m:
+                host = m.group(1)
+
+        if host is None:
+            print('Could not find my IPv4, using 0.0.0.0', file=stderr)
+            host = '0.0.0.0'
+
+    success = False
+    for _ in range(5):
+        if port is None:
+            try_port = randint(1025, 65535)
+        else:
+            try_port = port
+
+        try:
+            s = socket(AF_INET, SOCK_STREAM)
+            s.bind((host, try_port))
+            s.listen()
+        except Exception as e:
+            print(f'Failed to use {host}:{try_port}: {repr(e)}')
+            sleep(1)
+        else:
+            port = try_port
+            success = True
+            break
+        finally:
+            s.close()
+
+    if not success:
+        raise Exception('Could not find free port')
+
+    url = f'http://{host}:{port}/{secret}'
+
+    qr = QRCode()
+    qr.add_data(f'http://{host}:{port}/{secret}')
+    qr.print_ascii(tty=True)
+
+    print()
+    print(url)
+    print()
+
+    return host, port
+
+
+@app.route('/<secret_from_url>', methods=['GET'])
+def form(secret_from_url):
+    if secret_from_url != secret:
+        return 'no', 403
+
+    return html('''
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" multiple>
+        <textarea name="textarea"></textarea>
+        <input type="submit">
+    </form>
+    ''')
+
+
+@app.route('/<secret_from_url>', methods=['POST'])
+def save(secret_from_url):
+    if secret_from_url != secret:
+        return 'no', 403
+
+    saved = []
+
+    for file in request.files.getlist('file'):
+        if file.filename:
+            final_name = get_final_name(file.filename)
+            file.save(final_name)
+            saved.append(f'<li>{sanitize_html(final_name)}</li>')
+
+    if request.form.get('textarea'):
+        final_name = get_final_name('plain.txt')
+        with open(final_name, 'w') as fp:
+            fp.write(request.form.get('textarea'))
+        saved.append(f'<li>{sanitize_html(final_name)}</li>')
+
+    num = len(saved)
+    suffix = '' if num == 1 else 's'
+    body = f'<p>{num} file{suffix} saved:</p><ul>'
+    body += '\n'.join(saved)
+    body += '</ul>'
+
+    body += f'<p><a href="/{secret}">Back</a></p>'
+    return html(body)
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('--host')
+    parser.add_argument('--port', type=int)
+    parser.add_argument('--secret')
+    args = parser.parse_args()
+
+    if args.secret:
+        secret = args.secret
+
+    host, port = determine_host_and_port(args)
+    app.run(host=host, port=port)

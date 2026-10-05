@@ -1,0 +1,83 @@
+#!/bin/sh
+
+remaining() {
+  if [ -e $statusfile ]; then
+    stime=$(cat $statusfile | awk '/start/ {print $2}')
+    time=$(cat $configfile | awk '/'$(current)' / {print $2}')
+    echo $(($stime - $(date +%s) + $time))
+  fi
+}
+
+current() {
+  ! [ -e $statusfile ] && echo "null" || cat $statusfile | awk '/current/ {print $2}'
+}
+
+next() {
+  cat $configfile | awk '/'$(current)' / {print $3}'
+}
+
+update() {
+  printf "current %s\nstart %s" $1 $(date +%s) > $statusfile
+}
+
+list() {
+  cat $configfile | awk '{print $1}'
+}
+
+configdir="$HOME/.config/pomodoro"
+configfile="$configdir/config"
+statusfile="/tmp/.pomodoro"
+
+# Check for config file, if it doesnt exist, copy the default.
+if ! [ -e $configfile ]; then
+  mkdir -p $configdir
+  cp /usr/share/doc/pomodoro/config.def $configfile
+fi
+
+# Set flags for the arguments.
+while getopts ":sgk" opt; do
+  case $opt in
+    s)
+      s=0
+      ;;
+    k)
+      k=0
+      ;;
+    g)
+      g=0
+      ;;
+    \?)
+      exit 1
+  esac
+done
+
+# If no input arguments, show a simple menu.
+if [ $# -le 0 ]; then 
+  selection=$(printf "start\nkill" | dmenu)
+  [ $? -ne 0 ] && exit
+  [ "$selection" = "start" ] && s=0 || k=0
+fi
+
+# Handlers.
+if [ $s ]; then
+  if [ $# -le 1 ]; then
+    profile=$(list | dmenu)
+    [ $? -ne 0 ] && exit
+  else
+    profile=$2
+  fi
+  update $profile
+fi
+
+[ $k ] && rm $statusfile
+
+if [ $g ]; then
+  [ "$(current)" = "null" ] && exit 1
+  if [ $(remaining) -le 0 ]; then
+    notify-send "Timer $(current)" "done"
+    update $(next)
+    pomodoro -g
+  else
+    echo $(printf "%s %02d:%02d" $(current) $(($(remaining) / 60)) $(($(remaining) % 60)))
+  fi
+fi

@@ -1,0 +1,15 @@
+#!/bin/bash
+TEMP="$(mktemp)"
+[ -e "$TEMP" ] && rm "$TEMP"
+mkdir "$TEMP"
+BASE="$(basename "$1")"
+cp "$1" "$TEMP"
+
+cd "$TEMP"
+pdfseparate "$PWD"/"$1" %d.pdf
+rm "$BASE"
+find . -name '*.pdf' -print0 | grep -z -v group4 | xargs -0 -L1 group4ify-aux
+cat <(find . -name '*-group4.pdf' | sed 's:^./::' | sort -h | sed 's:^\|$:":g') <(echo "$BASE"-group4.pdf) | xargs pdfunite
+cd -
+mv "$TEMP"/"$BASE"-group4.pdf .
+rm -r "$TEMP"

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+
+
+from os.path import expanduser
+from subprocess import Popen
+
+import signal
+import pyudev
+
+
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+with open(expanduser('~/.slock-usb-key'), 'r') as fp:
+    serial = fp.read().strip()
+
+context = pyudev.Context()
+monitor = pyudev.Monitor.from_netlink(context)
+monitor.filter_by('block')
+for device in iter(monitor.poll, None):
+    if device.get('ID_SERIAL') == serial:
+        if device.action == 'add':
+            Popen(['sudo', '/usr/bin/killall', 'slock'])
+        elif device.action == 'remove':
+            Popen(['slock'])
