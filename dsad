@@ -1,0 +1,52 @@
+#!/bin/sh
+# dmenu script for sad
+# - requires BSD-style netcat with -N (it is in gentoo and arch packagers, at least)
+# - requires sadcmd
+PROMPT="sad? "
+
+# hint: order the following however you want.
+
+CUSTOMCMDS="sad-menu
+sad-start
+sad-toggle-play"
+
+ZEROCMDS="next
+prev
+stop
+kill
+random
+repeat
+clear
+playlist
+close
+ping
+uptime
+version"
+
+ARGCMDS="sad-add file/dir
+sad-add-playlist playlist.ply
+add path
+volume 0-100
+pause [0|1]
+play [ID]
+remove [ID]
+enable output
+disable output"
+
+# Echo, fixed so only the first argument can be flags.
+cmd=$(printf "%s\\n%s\\n%s"  "$CUSTOMCMDS" "$ZEROCMDS" "$ARGCMDS" \
+      | dmenu -i -l "$(printf "%s\\n%s\\n%s"  "$CUSTOMCMDS" "$ZEROCMDS" "$ARGCMDS" | wc -l -)" -p "$PROMPT" \
+      | cut -f1 -d ' ')
+
+printf "%s" "$CUSTOMCMDS" | grep -qxF -- "$cmd" \
+    && "$cmd"  && exit 0
+printf "%s" "$ZEROCMDS"   | grep -qxF -- "$cmd" \
+    && sad-cmd "$cmd" && exit 0
+hint=$(printf "%s\n" "$ARGCMDS" | awk -v c="$cmd" '$1 == c {print $2}')
+case $cmd in sad-*) run=$cmd ;; *) run="sad-cmd $cmd" ;; esac
+[ -n "$hint" ] \
+    && $run "$(printf "" | dmenu -i -l 0 -p "arg $hint? ")" \
+    && exit 0
+
+# not an arg
+exit 1
