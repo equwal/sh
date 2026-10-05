@@ -1,15 +1,13 @@
-#!/bin/bash
-TEMP="$(mktemp)"
-[ -e "$TEMP" ] && rm "$TEMP"
-mkdir "$TEMP"
-BASE="$(basename "$1")"
-cp "$1" "$TEMP"
+#!/bin/sh
+# Recompress every page of a scanned PDF as bilevel CCITT Group 4 (via group4ify-aux).
+# Usage: group4ify FILE.pdf   (writes ./FILE.pdf-group4.pdf)
+set -e
+TEMP="$(mktemp -d)"
+trap 'rm -r "$TEMP"' EXIT
+OUT="$PWD/$(basename "$1")-group4.pdf"
+pdfseparate "$1" "$TEMP"/%d.pdf
 
 cd "$TEMP"
-pdfseparate "$PWD"/"$1" %d.pdf
-rm "$BASE"
-find . -name '*.pdf' -print0 | grep -z -v group4 | xargs -0 -L1 group4ify-aux
-cat <(find . -name '*-group4.pdf' | sed 's:^./::' | sort -h | sed 's:^\|$:":g') <(echo "$BASE"-group4.pdf) | xargs pdfunite
-cd -
-mv "$TEMP"/"$BASE"-group4.pdf .
-rm -r "$TEMP"
+for p in *.pdf; do group4ify-aux "$p"; done
+# shellcheck disable=SC2046 # page files are N.pdf-group4.pdf: no spaces
+pdfunite $(printf '%s\n' *-group4.pdf | sort -n) "$OUT"

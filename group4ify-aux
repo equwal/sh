@@ -1,2 +1,3 @@
 #!/bin/sh
+# Usage: group4ify-aux FILE.pdf   (writes FILE.pdf-group4.pdf, bilevel CCITT Group 4 at 300 dpi)
 convert -density 300 -compress Group4 -type bilevel "$1" "$1"-group4.pdf
