@@ -1,37 +1,39 @@
 #!/bin/sh
+# Pomodoro timer. Usage: pomodoro [-s [profile] | -k | -g]; no args opens a dmenu menu.
+# -g prints "profile mm:ss" and advances the timer: poll it from a status bar.
 
 remaining() {
-  if [ -e $statusfile ]; then
-    stime=$(cat $statusfile | awk '/start/ {print $2}')
-    time=$(cat $configfile | awk '/'$(current)' / {print $2}')
-    echo $(($stime - $(date +%s) + $time))
+  if [ -e "$statusfile" ]; then
+    stime=$(awk '$1 == "start" {print $2}' "$statusfile")
+    time=$(awk -v p="$(current)" '$1 == p {print $2}' "$configfile")
+    echo $((stime - $(date +%s) + time))
   fi
 }
 
 current() {
-  ! [ -e $statusfile ] && echo "null" || cat $statusfile | awk '/current/ {print $2}'
+  ! [ -e "$statusfile" ] && echo "null" || awk '$1 == "current" {print $2}' "$statusfile"
 }
 
 next() {
-  cat $configfile | awk '/'$(current)' / {print $3}'
+  awk -v p="$(current)" '$1 == p {print $3}' "$configfile"
 }
 
 update() {
-  printf "current %s\nstart %s" $1 $(date +%s) > $statusfile
+  printf "current %s\nstart %s" "$1" "$(date +%s)" > "$statusfile"
 }
 
 list() {
-  cat $configfile | awk '{print $1}'
+  awk '{print $1}' "$configfile"
 }
 
-configdir="$HOME/.config/pomodoro"
+configdir="${XDG_CONFIG_HOME:-$HOME/.config}/pomodoro"
 configfile="$configdir/config"
-statusfile="/tmp/.pomodoro"
+statusfile="${XDG_RUNTIME_DIR:-/tmp}/.pomodoro-$(id -u)"
 
 # Check for config file, if it doesnt exist, copy the default.
-if ! [ -e $configfile ]; then
-  mkdir -p $configdir
-  cp /usr/share/doc/pomodoro/config.def $configfile
+if ! [ -e "$configfile" ]; then
+  mkdir -p "$configdir"
+  printf 'work 1500 break\nbreak 300 work\n' > "$configfile"
 fi
 
 # Set flags for the arguments.
@@ -57,27 +59,30 @@ if [ $# -le 0 ]; then
   [ $? -ne 0 ] && exit
   [ "$selection" = "start" ] && s=0 || k=0
 fi
+shift $((OPTIND - 1))
 
 # Handlers.
-if [ $s ]; then
-  if [ $# -le 1 ]; then
+if [ "$s" ]; then
+  if [ $# -le 0 ]; then
     profile=$(list | dmenu)
     [ $? -ne 0 ] && exit
   else
-    profile=$2
+    profile=$1
   fi
-  update $profile
+  list | grep -qxF -- "$profile" || exit 1
+  update "$profile"
 fi
 
-[ $k ] && rm $statusfile
+[ "$k" ] && rm -f "$statusfile"
 
-if [ $g ]; then
+if [ "$g" ]; then
   [ "$(current)" = "null" ] && exit 1
-  if [ $(remaining) -le 0 ]; then
+  r=$(remaining)
+  if [ "$r" -le 0 ]; then
     notify-send "Timer $(current)" "done"
-    update $(next)
-    pomodoro -g
+    update "$(next)"
+    "$0" -g
   else
-    echo $(printf "%s %02d:%02d" $(current) $(($(remaining) / 60)) $(($(remaining) % 60)))
+    printf "%s %02d:%02d\n" "$(current)" $((r / 60)) $((r % 60))
   fi
 fi
