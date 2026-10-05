@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
+# Serve a secret URL (and QR code) where a phone uploads files/text to cwd.
+# Usage: http-collect [--host IP] [--port N] [--secret S]  Needs: flask, qrcode
 
 
 from argparse import ArgumentParser
-from os import environ
-from os.path import isfile
+from os.path import lexists
 from random import randint
 from re import match
 from socket import socket, AF_INET, SOCK_STREAM
 from subprocess import check_output
-from sys import stderr
+from sys import stderr, stdout
 from time import sleep
 from uuid import uuid4
 
@@ -55,11 +56,11 @@ input, textarea {
 
 
 def sanitize_fs(s):
-    return s.strip().lstrip('.').replace('/', '_')
+    return s.strip().lstrip('.').replace('/', '_') or 'unnamed'
 
 
 def sanitize_html(s):
-    return s.replace('&', '&amp').replace('<', '&lt;').replace('>', '&gt;')
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
 def suffixify(basename, suff):
@@ -73,7 +74,7 @@ def suffixify(basename, suff):
 def get_final_name(original_name):
     candidate = base_name = sanitize_fs(original_name)
     suff = 1
-    while isfile(candidate):
+    while lexists(candidate):
         candidate = suffixify(base_name, suff)
         suff += 1
     return candidate
@@ -89,7 +90,10 @@ def determine_host_and_port(args):
         port = args.port
 
     if host is None:
-        rt = check_output(['ip', '-4', 'route']).decode('UTF-8')
+        try:
+            rt = check_output(['ip', '-4', 'route']).decode('UTF-8')
+        except OSError:
+            rt = ''
         for line in rt.splitlines():
             m = match(r'default.* src ([0-9.]+)', line)
             if m:
@@ -107,9 +111,9 @@ def determine_host_and_port(args):
             try_port = port
 
         try:
-            s = socket(AF_INET, SOCK_STREAM)
-            s.bind((host, try_port))
-            s.listen()
+            with socket(AF_INET, SOCK_STREAM) as s:
+                s.bind((host, try_port))
+                s.listen()
         except Exception as e:
             print(f'Failed to use {host}:{try_port}: {repr(e)}')
             sleep(1)
@@ -117,8 +121,6 @@ def determine_host_and_port(args):
             port = try_port
             success = True
             break
-        finally:
-            s.close()
 
     if not success:
         raise Exception('Could not find free port')
@@ -127,7 +129,7 @@ def determine_host_and_port(args):
 
     qr = QRCode()
     qr.add_data(f'http://{host}:{port}/{secret}')
-    qr.print_ascii(tty=True)
+    qr.print_ascii(tty=stdout.isatty())
 
     print()
     print(url)
@@ -165,7 +167,7 @@ def save(secret_from_url):
 
     if request.form.get('textarea'):
         final_name = get_final_name('plain.txt')
-        with open(final_name, 'w') as fp:
+        with open(final_name, 'w', encoding='UTF-8') as fp:
             fp.write(request.form.get('textarea'))
         saved.append(f'<li>{sanitize_html(final_name)}</li>')
 
